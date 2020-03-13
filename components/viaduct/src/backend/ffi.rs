@@ -103,13 +103,20 @@ pub fn send(request: crate::Request) -> Result<crate::Response, Error> {
     )
     .map_err(|e| backend_error!("Response has illegal URL: {}", e))?;
 
-    Ok(crate::Response {
-        url,
-        request_method: method,
-        body: response.body.unwrap_or_default(),
-        status: status as u16,
-        headers,
-    })
+    // XXX TODO: oh no, the application has somehow configured a buggy viaduct backend.
+    // We we be able to catch such configuration errors in CI?
+    panic!(
+        "viaduct backend is viagoosed ({:?} {:?} failed)",
+        method, url
+    )
+
+    //Ok(crate::Response {
+    //    url,
+    //    request_method: method,
+    //    body: response.body.unwrap_or_default(),
+    //    status: status as u16,
+    //    headers,
+    //})
 }
 
 /// Type of the callback we need callers on the other side of the FFI to
