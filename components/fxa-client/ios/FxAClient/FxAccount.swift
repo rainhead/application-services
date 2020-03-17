@@ -116,25 +116,25 @@ class FxAccount: RustFxAccount {
         }
     }
 
-    override func migrateFromSessionToken(sessionToken: String, kSync: String, kXCS: String) -> Bool {
+    override func migrateFromSessionToken(sessionToken: String, kSync: String, kXCS: String) -> String? {
         defer { tryPersistState() }
         do {
             return try super.migrateFromSessionToken(sessionToken: sessionToken, kSync: kSync, kXCS: kXCS)
         } catch {
             FxALog.error("migrateFromSessionToken error: \(error).")
             reportAccountMigrationError(error)
-            return false
+            return nil
         }
     }
 
-    override func retryMigrateFromSessionToken() -> Bool {
+    override func retryMigrateFromSessionToken() -> String? {
         defer { tryPersistState() }
         do {
             return try super.retryMigrateFromSessionToken()
         } catch {
             FxALog.error("retryMigrateFromSessionToken error: \(error).")
             reportAccountMigrationError(error)
-            return false
+            return nil
         }
     }
 

@@ -9,6 +9,13 @@ import SwiftProtobuf
 open class RustFxAccount {
     private let raw: UInt64
 
+    public struct MigrationData {
+        public let k_sync: String
+        public let k_xcs: String
+        public let copy_session_token: Bool
+        public let session_token: String
+    }
+
     internal init(raw: UInt64) {
         self.raw = raw
     }
@@ -259,19 +266,28 @@ open class RustFxAccount {
         }
     }
 
-    open func migrateFromSessionToken(sessionToken: String, kSync: String, kXCS: String) throws -> Bool {
-        let json = try nullableRustCall { err in
+    open func migrateFromSessionToken(sessionToken: String, kSync: String, kXCS: String) throws -> String? {
+        let ptr_to_json = try nullableRustCall { err in
             fxa_migrate_from_session_token(self.raw, sessionToken, kSync, kXCS, 0 /* reuse session token */, err)
         }
-        // We don't parse the JSON coz nobody uses it...
-        return json != nil
+        
+        if let ptr_to_json = ptr_to_json {
+            return String(freeingFxaString: ptr_to_json)
+        }
+        
+        return nil
     }
 
-    open func retryMigrateFromSessionToken() throws -> Bool {
-        let json = try nullableRustCall { err in
+    open func retryMigrateFromSessionToken() throws -> String? {
+        let ptr_to_json = try nullableRustCall { err in
             fxa_retry_migrate_from_session_token(self.raw, err)
         }
-        return json != nil
+        
+        if let ptr_to_json = ptr_to_json {
+            return String(freeingFxaString: ptr_to_json)
+        }
+        
+        return nil
     }
 
     open func isInMigrationState() throws -> Bool {

@@ -29,10 +29,13 @@ import mozilla.components.service.glean.private.LabeledMetricType
 /**
  * LoginsStorage implementation backed by a database.
  */
-class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsStorage {
+class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable {
     private var raw: AtomicLong = AtomicLong(0)
 
-    override fun isLocked(): Boolean {
+    /**
+     * Returns true if the database is locked, false otherwise.
+     */
+    fun isLocked(): Boolean {
         return raw.get() == 0L
     }
 
@@ -51,13 +54,18 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
      *
      * Note: handles do not remain valid after locking / unlocking the logins database.
      */
-    override fun getHandle(): Long {
+    fun getHandle(): Long {
         return this.raw.get()
     }
 
+    /**
+     * Lock (close) the database.
+     *
+     * @throws [MismatchedLockException] if the database is already locked
+     */
     @Synchronized
     @Throws(LoginsStorageException::class)
-    override fun lock() {
+    fun lock() {
         val raw = this.raw.getAndSet(0)
         if (raw == 0L) {
             throw MismatchedLockException("Lock called when we are already locked")
@@ -67,9 +75,16 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Unlock (open) the database.
+     *
+     * @throws [MismatchedLockException] if the database is already unlocked
+     * @throws [InvalidKeyException] if the encryption key is wrong, or the db is corrupt
+     * @throws [LoginsStorageException] if there was some other error opening the database
+     */
     @Synchronized
     @Throws(LoginsStorageException::class)
-    override fun unlock(encryptionKey: String) {
+    fun unlock(encryptionKey: String) {
         return unlockCounters.measure {
             rustCall {
                 if (!isLocked()) {
@@ -85,9 +100,18 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Unlock (open) the database, using a byte string as the key.
+     * This is equivalent to calling unlock() after hex-encoding the bytes (lower
+     * case hexadecimal characters are used).
+     *
+     * @throws [MismatchedLockException] if the database is already unlocked
+     * @throws [InvalidKeyException] if the encryption key is wrong, or the db is corrupt
+     * @throws [LoginsStorageException] if there was some other error opening the database
+     */
     @Synchronized
     @Throws(LoginsStorageException::class)
-    override fun unlock(encryptionKey: ByteArray) {
+    fun unlock(encryptionKey: ByteArray) {
         return unlockCounters.measure {
             rustCall {
                 if (!isLocked()) {
@@ -104,31 +128,59 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Equivalent to `unlock(encryptionKey)`, but does not throw in the case
+     * that the database is already unlocked.
+     *
+     * @throws [InvalidKeyException] if the encryption key is wrong, or the db is corrupt
+     * @throws [LoginsStorageException] if there was some other error opening the database
+     */
     @Synchronized
     @Throws(LoginsStorageException::class)
-    override fun ensureUnlocked(encryptionKey: String) {
+    fun ensureUnlocked(encryptionKey: String) {
         if (isLocked()) {
             this.unlock(encryptionKey)
         }
     }
 
+    /**
+     * Equivalent to `unlock(encryptionKey)`, but does not throw in the case
+     * that the database is already unlocked.
+     *
+     * @throws [InvalidKeyException] if the encryption key is wrong, or the db is corrupt
+     * @throws [LoginsStorageException] if there was some other error opening the database
+     */
     @Synchronized
     @Throws(LoginsStorageException::class)
-    override fun ensureUnlocked(encryptionKey: ByteArray) {
+    fun ensureUnlocked(encryptionKey: ByteArray) {
         if (isLocked()) {
             this.unlock(encryptionKey)
         }
     }
 
+    /**
+     * Equivalent to `unlock(encryptionKey)`, but does not throw in the case
+     * that the database is already unlocked.
+     *
+     * @throws [InvalidKeyException] if the encryption key is wrong, or the db is corrupt
+     * @throws [LoginsStorageException] if there was some other error opening the database
+     */
     @Synchronized
-    override fun ensureLocked() {
+    fun ensureLocked() {
         if (!isLocked()) {
             this.lock()
         }
     }
 
+    /**
+     * Synchronize the logins storage layer with a remote layer.
+     *
+     * @throws [SyncAuthInvalidException] if authentication needs to be refreshed
+     * @throws [RequestFailedException] if there was a network error during connection.
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun sync(syncInfo: SyncUnlockInfo): SyncTelemetryPing {
+    fun sync(syncInfo: SyncUnlockInfo): SyncTelemetryPing {
         val json = rustCallWithLock { raw, error ->
             PasswordSyncAdapter.INSTANCE.sync15_passwords_sync(
                     raw,
@@ -142,29 +194,52 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         return SyncTelemetryPing.fromJSONString(json)
     }
 
+    /**
+     * Delete all locally stored login sync metadata (last sync timestamps, etc).
+     *
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun reset() {
+    @Deprecated("Most uses should be replaced with wipe or wipeLocal instead")
+    fun reset() {
         rustCallWithLock { raw, error ->
             PasswordSyncAdapter.INSTANCE.sync15_passwords_reset(raw, error)
         }
     }
 
+    /**
+     * Delete all login records. These deletions will be synced to the server on the next call to sync.
+     *
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun wipe() {
+    fun wipe() {
         rustCallWithLock { raw, error ->
             PasswordSyncAdapter.INSTANCE.sync15_passwords_wipe(raw, error)
         }
     }
 
+    /**
+     * Clear out all local state, bringing us back to the state before the first sync.
+     *
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun wipeLocal() {
+    fun wipeLocal() {
         rustCallWithLock { raw, error ->
             PasswordSyncAdapter.INSTANCE.sync15_passwords_wipe_local(raw, error)
         }
     }
 
+    /**
+     * Deletes the password with the given ID.
+     *
+     * Returns true if the deletion did anything, false if no such record exists.
+     *
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun delete(id: String): Boolean {
+    fun delete(id: String): Boolean {
         return writeQueryCounters.measure {
             rustCallWithLock { raw, error ->
                 val deleted = LoginsStoreMetrics.writeQueryTime.measure {
@@ -175,8 +250,15 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Fetch a password from the underlying storage layer by ID.
+     *
+     * Returns `null` if the record does not exist.
+     *
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun get(id: String): ServerPassword? {
+    fun get(id: String): ServerPassword? {
         return readQueryCounters.measure {
             val rustBuf = rustCallWithLock { raw, error ->
                 LoginsStoreMetrics.readQueryTime.measure {
@@ -193,8 +275,14 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Mark the login with the given ID as `in-use`.
+     *
+     * @throws [NoSuchRecordException] If the record with that ID does not exist.
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun touch(id: String) {
+    fun touch(id: String) {
         writeQueryCounters.measure {
             rustCallWithLock { raw, error ->
                 LoginsStoreMetrics.writeQueryTime.measure {
@@ -204,8 +292,13 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Fetch the full list of passwords from the underlying storage layer.
+     *
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun list(): List<ServerPassword> {
+    fun list(): List<ServerPassword> {
         return readQueryCounters.measure {
             val rustBuf = rustCallWithLock { raw, error ->
                 LoginsStoreMetrics.readQueryTime.measure {
@@ -220,8 +313,13 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Fetch the list of passwords for some base domain from the underlying storage layer.
+     *
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun getByBaseDomain(baseDomain: String): List<ServerPassword> {
+    fun getByBaseDomain(baseDomain: String): List<ServerPassword> {
         return readQueryCounters.measure {
             val rustBuf = rustCallWithLock { raw, error ->
                 PasswordSyncAdapter.INSTANCE.sync15_passwords_get_by_base_domain(raw, baseDomain, error)
@@ -234,8 +332,29 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Inserts the provided login into the database, returning its id.
+     *
+     * This function ignores values in metadata fields (`timesUsed`,
+     * `timeCreated`, `timeLastUsed`, and `timePasswordChanged`).
+     *
+     * If login has an empty id field, then a GUID will be
+     * generated automatically. The format of generated guids
+     * are left up to the implementation of LoginsStorage (in
+     * practice the [DatabaseLoginsStorage] generates 12-character
+     * base64url (RFC 4648) encoded strings
+     *
+     * This will return an error result if a GUID is provided but
+     * collides with an existing record, or if the provided record
+     * is invalid (missing password, hostname, or doesn't have exactly
+     * one of formSubmitURL and httpRealm).
+     *
+     * @throws [IdCollisionException] if a nonempty id is provided, and
+     * @throws [InvalidRecordException] if the record is invalid.
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun add(login: ServerPassword): String {
+    fun add(login: ServerPassword): String {
         return writeQueryCounters.measure {
             val buf = login.toProtobuf()
             val (nioBuf, len) = buf.toNioDirectBuffer()
@@ -248,8 +367,14 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Imports provided logins into the database.
+     * GUIDs are thrown away and replaced by auto-generated ones from the crate.
+     *
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun importLogins(logins: Array<ServerPassword>): JSONObject {
+    fun importLogins(logins: Array<ServerPassword>): JSONObject {
         return writeQueryCounters.measure {
             val buf = logins.toCollectionMessage()
             val (nioBuf, len) = buf.toNioDirectBuffer()
@@ -261,8 +386,24 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Updates the fields in the provided record.
+     *
+     * This will return an error if `login.id` does not refer to
+     * a record that exists in the database, or if the provided record
+     * is invalid (missing password, hostname, or doesn't have exactly
+     * one of formSubmitURL and httpRealm).
+     *
+     * Like `add`, this function will ignore values in metadata
+     * fields (`timesUsed`, `timeCreated`, `timeLastUsed`, and
+     * `timePasswordChanged`).
+     *
+     * @throws [NoSuchRecordException] if the login does not exist.
+     * @throws [InvalidRecordException] if the update would create an invalid record.
+     * @throws [LoginsStorageException] On unexpected errors (IO failure, rust panics, etc)
+     */
     @Throws(LoginsStorageException::class)
-    override fun update(login: ServerPassword) {
+    fun update(login: ServerPassword) {
         return writeQueryCounters.measure {
             val buf = login.toProtobuf()
             val (nioBuf, len) = buf.toNioDirectBuffer()
@@ -275,8 +416,20 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
-    @Throws(InvalidRecordException::class)
-    override fun ensureValid(login: ServerPassword) {
+    /**
+     * Checks if login already exists and is valid. Throws a [InvalidRecordException] if it is not.
+     *
+     * ```
+     * try {
+     *     db.ensureValid(record)
+     * } catch (e: InvalidRecordException) {
+     *     // The reason the record is invalid is stored in `e.reason`.
+     * }
+     * ```
+     *
+     * @throws [InvalidRecordException] On unexpected errors (IO failure, rust panics, etc)
+     */
+    fun ensureValid(login: ServerPassword) {
         readQueryCounters.measure {
             val buf = login.toProtobuf()
             val (nioBuf, len) = buf.toNioDirectBuffer()
@@ -289,15 +442,21 @@ class DatabaseLoginsStorage(private val dbPath: String) : AutoCloseable, LoginsS
         }
     }
 
+    /**
+     * Change the key on an existing encrypted database.
+     */
     @Throws(LoginsStorageException::class)
-    override fun rekeyDatabase(newEncryptionKey: String) {
+    fun rekeyDatabase(newEncryptionKey: String) {
         return rustCallWithLock { raw, error ->
             PasswordSyncAdapter.INSTANCE.sync15_passwords_rekey_database(raw, newEncryptionKey, error)
         }
     }
 
+    /**
+     * Change the key on an existing encrypted database.
+     */
     @Throws(LoginsStorageException::class)
-    override fun rekeyDatabase(newEncryptionKey: ByteArray) {
+    fun rekeyDatabase(newEncryptionKey: ByteArray) {
         return rustCallWithLock { raw, error ->
             PasswordSyncAdapter.INSTANCE.sync15_passwords_rekey_database_with_hex_key(
                     raw,
@@ -456,3 +615,10 @@ class LoginsStoreCounterMetrics(
         }
     }
 }
+
+class SyncUnlockInfo(
+    val kid: String,
+    val fxaAccessToken: String,
+    val syncKey: String,
+    val tokenserverURL: String
+)

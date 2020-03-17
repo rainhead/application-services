@@ -14,11 +14,11 @@ import org.junit.Assert.fail
 
 abstract class LoginsStorageTest {
 
-    abstract fun createTestStore(): LoginsStorage
+    abstract fun createTestStore(): DatabaseLoginsStorage
 
     protected val encryptionKey = "testEncryptionKey"
 
-    protected fun getTestStore(): LoginsStorage {
+    protected fun getTestStore(): DatabaseLoginsStorage {
         val store = createTestStore()
 
         store.unlock(encryptionKey)
@@ -47,7 +47,7 @@ abstract class LoginsStorageTest {
         return store
     }
 
-    protected fun finishAndClose(store: LoginsStorage) {
+    protected fun finishAndClose(store: DatabaseLoginsStorage) {
         store.ensureLocked()
         assertEquals(store.isLocked(), true)
         store.close()
