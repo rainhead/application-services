@@ -2946,6 +2946,7 @@ dependencies = [
  "pretty_assertions",
  "rusqlite",
  "serde",
+ "serde_derive",
  "serde_json",
  "sql-support",
  "sync-guid",
