@@ -117,7 +117,7 @@ fn get_keys(keys: &JsonValue) -> Vec<(String, Option<JsonValue>)> {
             .iter()
             .map(|(k, d)| (k.to_string(), Some(d.clone())))
             .collect(),
-        JsonValue::Null | _ => vec![],
+        _ => vec![],
     }
 }
 
